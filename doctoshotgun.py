@@ -182,35 +182,24 @@ class AvailabilitiesPage(JsonPage):
                 continue
             return a['slots'][-1]
 
-class Appointment(JsonPage):
-    def __init__(self):
-        self.appointment_edit = URL(
-        r'/appointments/(?P<id>.+)/edit.json', AppointmentEditPage)
-        self.appointment_post = URL(
-        r'/appointments/(?P<id>.+).json', AppointmentPostPage)
-        self.appointment = URL(r'/appointments.json', AppointmentPage)
-        
-        self.appointment_details = {'profile_id':    profile_id,
-                       'source_action': 'profile',
-                       'start_date':    slot_date_first,
-                       'visit_motive_ids': str(motive_id),
-                       }
-    
-class AppointmentPage(JsonPage)
+
+class AppointmentPage(JsonPage):
     def get_error(self):
         return self.doc['error']
 
     def is_error(self):
         return 'error' in self.doc
-   
-class AppointmentEditPage(self):
+
+
+class AppointmentEditPage(JsonPage):
+    def get_custom_fields(self):
         for field in self.doc['appointment']['custom_fields']:
             if field['required']:
                 yield field
 
-class AppointmentPostPage(self):
-    pass
 
+class AppointmentPostPage(JsonPage):
+    pass
 
 
 class MasterPatientPage(JsonPage):
@@ -240,9 +229,11 @@ class Doctolib(LoginBrowser):
     availabilities = URL(r'/availabilities.json', AvailabilitiesPage)
     second_shot_availabilities = URL(
         r'/second_shot_availabilities.json', AvailabilitiesPage)
-
-    
-    Appointment = Appointment()
+    appointment = URL(r'/appointments.json', AppointmentPage)
+    appointment_edit = URL(
+        r'/appointments/(?P<id>.+)/edit.json', AppointmentEditPage)
+    appointment_post = URL(
+        r'/appointments/(?P<id>.+).json', AppointmentPostPage)
     master_patient = URL(r'/account/master_patients.json', MasterPatientPage)
 
     def _setup_session(self, profile):
@@ -444,8 +435,11 @@ class Doctolib(LoginBrowser):
         log('  ├╴ Best slot found: %s', parse_date(
             slot_date_first).strftime('%c'))
 
-        appointment = Appointment.appointment_details()
-        
+        appointment = {'profile_id':    profile_id,
+                       'source_action': 'profile',
+                       'start_date':    slot_date_first,
+                       'visit_motive_ids': str(motive_id),
+                       }
 
         data = {'agenda_ids': '-'.join(agenda_ids),
                 'appointment': appointment,
@@ -454,7 +448,7 @@ class Doctolib(LoginBrowser):
         headers = {
             'content-type': 'application/json',
         }
-        Appointment.appointment.go(data=json.dumps(data), headers=headers)
+        self.appointment.go(data=json.dumps(data), headers=headers)
 
         if self.page.is_error():
             log('  └╴ Appointment not available anymore :( %s', self.page.get_error())
@@ -494,7 +488,7 @@ class Doctolib(LoginBrowser):
                 slot_date_second).strftime('%c'))
 
             data['second_slot'] = slot_date_second
-            Appointment.appointment.go(data=json.dumps(data), headers=headers)
+            self.appointment.go(data=json.dumps(data), headers=headers)
 
             if self.page.is_error():
                 log('  └╴ Appointment not available anymore :( %s',
@@ -503,11 +497,11 @@ class Doctolib(LoginBrowser):
 
         a_id = self.page.doc['id']
 
-        Appointment.appointment_edit.go(id=a_id)
+        self.appointment_edit.go(id=a_id)
 
         log('  ├╴ Booking for %(first_name)s %(last_name)s...' % self.patient)
 
-        Appointment.appointment_edit.go(
+        self.appointment_edit.go(
             id=a_id, params={'master_patient_id': self.patient['id']})
 
         custom_fields = {}
@@ -540,14 +534,14 @@ class Doctolib(LoginBrowser):
                 'phone_number': None,
                 }
 
-        Appointment.appointment_post.go(id=a_id, data=json.dumps(
+        self.appointment_post.go(id=a_id, data=json.dumps(
             data), headers=headers, method='PUT')
 
         if 'redirection' in self.page.doc and not 'confirmed-appointment' in self.page.doc['redirection']:
             log('  ├╴ Open %s to complete', self.BASEURL +
                 self.page.doc['redirection'])
 
-        Appointment.appointment_post.go(id=a_id)
+        self.appointment_post.go(id=a_id)
 
         log('  └╴ Booking status: %s', self.page.doc['confirmed'])
 
